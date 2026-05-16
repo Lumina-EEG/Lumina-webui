@@ -2,33 +2,80 @@
   display: flex;
   min-height: 100vh;
   width: 100%;
+  overflow: hidden;
 }
 
 .main-area {
   flex: 1;
-  margin-left: var(--sidebar-width);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   transition: margin-left 0.25s ease;
 }
 
-.main-area.sidebar-collapsed {
-  margin-left: var(--sidebar-collapsed);
+@media (min-width: 1025px) {
+  .main-area {
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+  }
+
+  .main-area.sidebar-collapsed {
+    margin-left: var(--sidebar-collapsed);
+    width: calc(100% - var(--sidebar-collapsed));
+  }
+}
+
+@media (max-width: 1024px) {
+  .main-area {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  .content-area {
+    padding: 20px 16px;
+  }
+
+  .results-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+
+  .header-separator {
+    display: inline !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-title {
+    font-size: 15px !important;
+  }
+
+  .header-patient {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .mobile-menu-btn {
+    display: none !important;
+  }
 }
 
 .content-area {
   flex: 1;
   padding: 28px 32px;
   overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
-/* Sidebar button hover */
 .sidebar-toggle-btn:hover {
   color: var(--text-primary) !important;
 }
 
-/* Scrollbar styling */
 .content-area::-webkit-scrollbar,
 .scrollable-note::-webkit-scrollbar {
   width: 6px;
@@ -50,7 +97,6 @@
   background: rgba(120, 170, 255, 0.25);
 }
 
-/* Spinning animation for processing state */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -58,46 +104,4 @@
 
 .spin-animation {
   animation: spin 1.5s linear infinite;
-}
-
-/* Sidebar overlay on mobile */
-@media (max-width: 768px) {
-  .sidebar-overlay {
-    display: block !important;
-  }
-}
-
-@media (min-width: 769px) {
-  .sidebar-overlay {
-    display: none !important;
-  }
-}
-
-/* Responsive layout */
-@media (max-width: 1024px) {
-  .results-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .content-area {
-    padding: 20px 16px;
-  }
-
-  .main-area {
-    margin-left: var(--sidebar-collapsed);
-  }
-
-  .main-area.sidebar-collapsed {
-    margin-left: 0;
-  }
-}
-
-@media (max-width: 480px) {
-  .main-area {
-    margin-left: 0 !important;
-  }
-
-  .main-area.sidebar-collapsed {
-    margin-left: 0 !important;
-  }
 }

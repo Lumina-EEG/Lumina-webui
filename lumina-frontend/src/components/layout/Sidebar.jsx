@@ -1,47 +1,79 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Upload,
   Activity,
   FileText,
   Settings,
-  ChevronLeft,
-  Menu,
+  Radio,
+  X,
 } from 'lucide-react';
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'upload', label: 'Upload', icon: Upload },
   { id: 'analysis', label: 'Analysis', icon: Activity },
+  { id: 'device', label: 'Device Integration', icon: Radio },
   { id: 'reports', label: 'Reports', icon: FileText },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+const MOBILE_BP = 1024;
+
 export default function Sidebar({ activePage, onNavigate, collapsed, onToggle }) {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BP);
+
+  useEffect(() => {
+    let mounted = true;
+    const handleResize = () => {
+      if (mounted) setIsMobile(window.innerWidth < MOBILE_BP);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      mounted = false;
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  const isOpen = !collapsed;
+  const hideLabels = collapsed && !isMobile;
+
+  const handleNavClick = (id) => {
+    onNavigate(id);
+    if (isMobile) onToggle();
+  };
+
   return (
     <>
-      <AnimatePresence>
-        {!collapsed && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onToggle}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 98,
-            }}
-            className="sidebar-overlay"
-          />
-        )}
-      </AnimatePresence>
+      {isMobile && (
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              key="overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={onToggle}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.5)',
+                zIndex: 98,
+              }}
+            />
+          )}
+        </AnimatePresence>
+      )}
 
       <motion.aside
         initial={false}
-        animate={{ width: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)' }}
+        animate={
+          isMobile
+            ? { x: isOpen ? 0 : '-100%' }
+            : { width: isOpen ? 'var(--sidebar-width)' : 'var(--sidebar-collapsed)' }
+        }
         transition={{ duration: 0.25, ease: 'easeInOut' }}
         style={{
           position: 'fixed',
@@ -54,44 +86,52 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          width: isMobile ? 280 : (isOpen ? 'var(--sidebar-width)' : 'var(--sidebar-collapsed)'),
+          ...(isMobile && isOpen ? { boxShadow: 'var(--shadow-lg)' } : {}),
         }}
       >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            padding: collapsed ? '16px 0' : '16px 20px',
+            justifyContent: hideLabels ? 'center' : 'space-between',
+            padding: hideLabels ? '16px 0' : '16px 20px',
             borderBottom: '1px solid var(--border)',
             minHeight: 64,
           }}
         >
-          {!collapsed && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <img
-                src="/lumina-logo.jpeg"
-                alt="Lumina"
-                style={{ height: 28, width: 28, borderRadius: 6, objectFit: 'cover' }}
-              />
+          <button
+            onClick={() => onNavigate('welcome')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: hideLabels ? 'center' : 'flex-start',
+              gap: 10,
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+              padding: 0,
+            }}
+          >
+            <img
+              src="/lumina-logo.jpeg"
+              alt="Lumina"
+              style={{ height: 28, width: 28, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+            />
+            {!hideLabels && (
               <span
                 style={{
                   fontSize: 18,
                   fontWeight: 700,
-                  color: 'var(--text-primary)',
                   letterSpacing: '-0.02em',
                 }}
               >
                 Lumina
               </span>
-            </div>
-          )}
-          {collapsed && (
-            <img
-              src="/lumina-logo.jpeg"
-              alt="Lumina"
-              style={{ height: 28, width: 28, borderRadius: 6, objectFit: 'cover' }}
-            />
-          )}
+            )}
+          </button>
           <button
             onClick={onToggle}
             style={{
@@ -105,11 +145,10 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
               padding: 4,
               borderRadius: 'var(--radius-sm)',
               transition: 'color 0.2s',
-              opacity: collapsed ? 1 : 0.7,
             }}
             className="sidebar-toggle-btn"
           >
-            {collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
+            <X size={18} />
           </button>
         </div>
 
@@ -119,7 +158,7 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
             display: 'flex',
             flexDirection: 'column',
             gap: 2,
-            padding: collapsed ? '12px 8px' : '12px 10px',
+            padding: hideLabels ? '12px 8px' : '12px 10px',
           }}
         >
           {navItems.map((item) => {
@@ -128,15 +167,15 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
             return (
               <motion.button
                 key={item.id}
-                whileHover={{ x: collapsed ? 0 : 4 }}
+                whileHover={{ x: hideLabels ? 0 : 4 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => onNavigate(item.id)}
+                onClick={() => handleNavClick(item.id)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  justifyContent: hideLabels ? 'center' : 'flex-start',
                   gap: 12,
-                  padding: collapsed ? '10px' : '10px 14px',
+                  padding: hideLabels ? '10px' : '10px 14px',
                   borderRadius: 'var(--radius-md)',
                   background: isActive ? 'var(--accent-dim)' : 'transparent',
                   border: 'none',
@@ -149,7 +188,7 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                 }}
-                title={collapsed ? item.label : undefined}
+                title={hideLabels ? item.label : undefined}
               >
                 {isActive && (
                   <motion.div
@@ -168,7 +207,7 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
                   />
                 )}
                 <Icon size={18} />
-                {!collapsed && item.label}
+                {!hideLabels && item.label}
               </motion.button>
             );
           })}
@@ -176,12 +215,12 @@ export default function Sidebar({ activePage, onNavigate, collapsed, onToggle })
 
         <div
           style={{
-            padding: collapsed ? '12px 0' : '12px 16px',
+            padding: hideLabels ? '12px 0' : '12px 16px',
             borderTop: '1px solid var(--border)',
-            textAlign: collapsed ? 'center' : 'left',
+            textAlign: hideLabels ? 'center' : 'left',
           }}
         >
-          {!collapsed && (
+          {!hideLabels && (
             <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
               Lumina v1.0
             </span>

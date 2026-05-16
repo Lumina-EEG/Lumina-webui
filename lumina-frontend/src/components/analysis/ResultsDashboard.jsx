@@ -3,6 +3,7 @@ import PredictionCard from './PredictionCard';
 import ClinicalNote from './ClinicalNote';
 import HeatmapView from './HeatmapView';
 import SectionHeader from '../ui/SectionHeader';
+import EEGViewer from '../eeg/EEGViewer';
 
 export default function ResultsDashboard({ results, heatmapData }) {
   if (!results) return null;
@@ -16,6 +17,20 @@ export default function ResultsDashboard({ results, heatmapData }) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
     >
+      {results.waveforms && (
+        <>
+          <SectionHeader
+            title="EEG Waveform Preview"
+            subtitle="Raw multichannel EEG signal"
+          />
+          <EEGViewer
+            signal={results.waveforms.signal}
+            channels={results.waveforms.channels}
+            sampleRate={results.waveforms.sample_rate}
+          />
+        </>
+      )}
+
       <SectionHeader title="Analysis Results" subtitle="AI-powered EEG diagnostic output" />
 
       <div
