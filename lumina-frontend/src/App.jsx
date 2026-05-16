@@ -10,6 +10,8 @@ import Card from './components/ui/Card';
 import SectionHeader from './components/ui/SectionHeader';
 import { SkeletonCard, SkeletonHeatmap, SkeletonText } from './components/ui/LoadingSkeleton';
 import useAnalysis from './hooks/useAnalysis';
+import WelcomePage from './pages/WelcomePage';
+import DeviceIntegration from './pages/MachineIntegration';
 import './App.css';
 
 const defaultPatient = {
@@ -268,7 +270,7 @@ function SettingsPage() {
 
 export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('welcome');
   const [patient, setPatient] = useState(defaultPatient);
 
   const {
@@ -333,6 +335,8 @@ export default function App() {
         return <ReportsPage />;
       case 'settings':
         return <SettingsPage />;
+      case 'device':
+        return <DeviceIntegration onNavigate={handleNavigate} />;
       case 'dashboard':
       default:
         return (
@@ -353,7 +357,12 @@ export default function App() {
     analysis: 'Analysis',
     reports: 'Reports',
     settings: 'Settings',
+    device: 'Device Integration',
   };
+
+  if (activePage === 'welcome') {
+    return <WelcomePage onNavigate={handleNavigate} />;
+  }
 
   return (
     <div className="app-root">
@@ -366,6 +375,8 @@ export default function App() {
 
       <div className={`main-area ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <Header
+          onNavigate={handleNavigate}
+          onToggle={() => setSidebarCollapsed((c) => !c)}
           title={pageTitles[activePage] || 'Lumina'}
           status={status}
           patientName={patient.name || null}

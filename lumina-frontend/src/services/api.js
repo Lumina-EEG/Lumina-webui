@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "../config/api";
 
-const DEFAULT_TIMEOUT = 30000;
+const DEFAULT_TIMEOUT = 100000;
 
 async function fetchWithTimeout(url, options = {}) {
   const { timeout = DEFAULT_TIMEOUT, ...rest } = options;
@@ -15,7 +15,9 @@ async function fetchWithTimeout(url, options = {}) {
     return res;
   } catch (err) {
     if (err.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeout / 1000}s`, { cause: err });
+      throw new Error(`Request timed out after ${timeout / 1000}s`, {
+        cause: err,
+      });
     }
     throw err;
   } finally {
@@ -30,7 +32,7 @@ export async function uploadFile(file) {
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/analyze`, {
     method: "POST",
     body: formData,
-    timeout: 60000,
+    timeout: 500000,
   });
 
   const data = await res.json();
@@ -38,9 +40,12 @@ export async function uploadFile(file) {
 }
 
 export async function pollResults(taskId) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/results/${taskId}`, {
-    timeout: 15000,
-  });
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/results/${taskId}`,
+    {
+      timeout: 50000,
+    },
+  );
 
   const data = await res.json();
   return data;
