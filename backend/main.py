@@ -11,14 +11,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import your working PyTorch pipeline
-from lumina_pipeline import infer_edf, infer_npy
+from lumina_pipeline import infer_edf, infer_npy, CLASS_NAMES
+
+# Frontend expects these exact class labels (note: "Alzheimer" not "Alzheimers")
+FRONTEND_CLASS_NAMES = ["Healthy", "Alzheimer", "Epilepsy", "MDD"]
 
 app = FastAPI(title="Lumina Clinical API")
 
 # Allow React to communicate with this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,7 +42,19 @@ def process_eeg_task(task_id: str, file_path: str, file_extension: str):
         if "explanation" in summary and "heatmap_matrix" in summary["explanation"]:
             summary["explanation"]["heatmap"] = summary["explanation"]["heatmap_matrix"]
 
-        # 3. Save to database
+        # 3. CONVERT mean_probabilities FROM DICT TO ARRAY FOR FRONTEND
+        # The pipeline returns mean_probabilities as a dict keyed by class name.
+        # The React frontend expects an array indexed by position.
+        if "mean_probabilities" in summary and isinstance(summary["mean_probabilities"], dict):
+            probs_dict = summary["mean_probabilities"]
+            summary["mean_probabilities"] = [round(float(probs_dict.get(n, 0.0)), 4) for n in CLASS_NAMES]
+            summary["class_names"] = FRONTEND_CLASS_NAMES
+
+        # 4. MAP "Alzheimers" → "Alzheimer" so frontend icons/colors match
+        if summary.get("session_prediction") == "Alzheimers":
+            summary["session_prediction"] = "Alzheimer"
+
+        # 5. Save to database
         RESULTS_DB[task_id] = {
             "status": "complete",
             "data": summary
