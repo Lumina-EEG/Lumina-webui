@@ -1,11 +1,41 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { uploadFile, pollResults } from '../services/api';
+import { getWithExpiry, setWithExpiry, removeItem } from '../utils/storage';
 
 export default function useAnalysis() {
-  const [file, setFile] = useState(null);
-  const [status, setStatus] = useState('idle');
-  const [results, setResults] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
+  const savedSession = (() => {
+    try {
+      return getWithExpiry('analysis_session');
+    } catch {
+      return null;
+    }
+  })();
+
+  const [file, setFile] = useState(
+    savedSession?.fileMeta
+      ? { name: savedSession.fileMeta.name, size: savedSession.fileMeta.size, type: savedSession.fileMeta.type, lastModified: savedSession.fileMeta.lastModified }
+      : null,
+  );
+  const [status, setStatus] = useState(
+    savedSession && (savedSession.status === 'complete' || savedSession.status === 'error')
+      ? savedSession.status
+      : 'idle',
+  );
+  const [results, setResults] = useState(
+    savedSession?.status === 'complete' && savedSession?.results
+      ? savedSession.results
+      : null,
+  );
+  const [errorMsg, setErrorMsg] = useState(
+    savedSession?.status === 'error' ? savedSession.errorMsg || '' : '',
+  );
+  const [history, setHistory] = useState(() => {
+    try {
+      return getWithExpiry('analysis_history') || [];
+    } catch {
+      return [];
+    }
+  });
   const intervalRef = useRef(null);
 
   const reset = useCallback(() => {
@@ -17,6 +47,7 @@ export default function useAnalysis() {
     setStatus('idle');
     setResults(null);
     setErrorMsg('');
+    removeItem('analysis_session');
   }, []);
 
   const cancel = useCallback(() => {
@@ -25,9 +56,41 @@ export default function useAnalysis() {
       intervalRef.current = null;
     }
     setStatus('idle');
+    removeItem('analysis_session');
   }, []);
 
-  const runAnalysis = useCallback(async (selectedFile) => {
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    removeItem('analysis_history');
+  }, []);
+
+  useEffect(() => {
+    setWithExpiry('analysis_history', history);
+  }, [history]);
+
+  useEffect(() => {
+    if (status === 'complete') {
+      setWithExpiry('analysis_session', {
+        status: 'complete',
+        results,
+        fileMeta: file
+          ? { name: file.name, size: file.size, type: file.type, lastModified: file.lastModified }
+          : null,
+      });
+    } else if (status === 'error') {
+      setWithExpiry('analysis_session', {
+        status: 'error',
+        errorMsg,
+        fileMeta: file
+          ? { name: file.name, size: file.size, type: file.type, lastModified: file.lastModified }
+          : null,
+      });
+    } else if (status === 'idle') {
+      removeItem('analysis_session');
+    }
+  }, [status, results, errorMsg, file]);
+
+  const runAnalysis = useCallback(async (selectedFile, metadata = {}) => {
     const f = selectedFile || file;
     if (!f) return;
 
@@ -49,6 +112,19 @@ export default function useAnalysis() {
               const payload = data.data || data;
               setResults(payload);
               setStatus('complete');
+
+              const entry = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                fileName: f.name,
+                fileSize: f.size,
+                patientName: metadata.patientName || '',
+                patientGender: metadata.patientGender || '',
+                patientAge: metadata.patientAge || '',
+                results: payload,
+              };
+              setHistory((prev) => [entry, ...prev]);
+
               resolve();
             } else if (data.status === 'failed') {
               clearInterval(intervalRef.current);
@@ -92,9 +168,11 @@ export default function useAnalysis() {
     status,
     results,
     errorMsg,
+    history,
     runAnalysis,
     reset,
     cancel,
+    clearHistory,
     getHeatmapData,
   };
 }

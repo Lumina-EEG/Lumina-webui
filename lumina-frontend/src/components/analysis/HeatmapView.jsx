@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import Card from '../ui/Card';
 
 const FREQ_BINS = 60;
@@ -70,7 +70,7 @@ function buildSpectrogramMatrix(flat1D, numChannels = 19) {
   return { matrix, timeSamples };
 }
 
-export default function HeatmapView({ data }) {
+const HeatmapView = forwardRef(function HeatmapView({ data }, ref) {
   const plotDiv = useRef(null);
 
   const spectrogramData = useMemo(() => {
@@ -97,6 +97,21 @@ export default function HeatmapView({ data }) {
       return false;
     }
   }, [data]);
+
+  useImperativeHandle(ref, () => ({
+    captureImage: async (opts = {}) => {
+      const el = plotDiv.current;
+      if (!el || !window.Plotly) return null;
+      const { width = 800, height = 400, scale = 2 } = opts;
+      const dataUrl = await window.Plotly.toImage(el, {
+        format: 'png',
+        width,
+        height,
+        scale,
+      });
+      return dataUrl;
+    },
+  }), []);
 
   useEffect(() => {
     const currentDiv = plotDiv.current;
@@ -240,4 +255,6 @@ export default function HeatmapView({ data }) {
       }}
     />
   );
-}
+});
+
+export default HeatmapView;

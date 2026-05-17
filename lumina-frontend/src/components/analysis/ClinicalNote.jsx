@@ -1,12 +1,24 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Copy, Download, Check, Clock, Stethoscope } from 'lucide-react';
+import { Copy, Download, Check, Clock, Stethoscope, Loader2 } from 'lucide-react';
 import Card from '../ui/Card';
 
-export default function ClinicalNote({ note }) {
-  const [copied, setCopied] = useState(false);
+function sanitizeText(text) {
+  if (!text) return text;
+  let s = text
+    .replace(/\ufeff/g, '')
+    .replace(/\u200b/g, '')
+    .replace(/\u200c/g, '')
+    .replace(/\u200d/g, '');
+  s = s.replace(/[^\x20-\x7E\s\u00A0-\uD7FF\uE000-\uFFFD]/g, '');
+  return s.trim();
+}
 
-  if (!note) {
+export default function ClinicalNote({ note, onDownloadPDF, generating }) {
+  const [copied, setCopied] = useState(false);
+  const cleanNote = useMemo(() => sanitizeText(note), [note]);
+
+  if (!cleanNote) {
     return (
       <Card variant="glass">
         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
@@ -21,20 +33,24 @@ export default function ClinicalNote({ note }) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(note);
+      await navigator.clipboard.writeText(cleanNote);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
   };
 
   const handleDownload = () => {
-    const blob = new Blob([note], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lumina-clinical-report-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (onDownloadPDF) {
+      onDownloadPDF();
+    } else {
+      const blob = new Blob([cleanNote], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lumina-clinical-report-${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const formatNote = (text) => {
@@ -117,26 +133,28 @@ export default function ClinicalNote({ note }) {
             {copied ? 'Copied' : 'Copy'}
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={generating ? {} : { scale: 1.05 }}
+            whileTap={generating ? {} : { scale: 0.95 }}
             onClick={handleDownload}
+            disabled={generating}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
               padding: '6px 12px',
               borderRadius: 'var(--radius-sm)',
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
+              background: generating ? 'var(--bg-surface)' : 'var(--bg-primary)',
+              border: `1px solid ${generating ? 'var(--border)' : 'var(--border)'}`,
+              color: generating ? 'var(--text-muted)' : 'var(--text-secondary)',
+              cursor: generating ? 'not-allowed' : 'pointer',
               fontSize: 12,
               fontWeight: 500,
+              fontFamily: 'inherit',
               transition: 'background 0.2s',
             }}
           >
-            <Download size={14} />
-            Download
+            {generating ? <Loader2 size={14} className="spin-animation" /> : <Download size={14} />}
+            {generating ? 'Generating...' : 'Download'}
           </motion.button>
         </div>
       </div>
@@ -149,7 +167,7 @@ export default function ClinicalNote({ note }) {
         }}
         className="scrollable-note"
       >
-        <div>{formatNote(note)}</div>
+        <div>{formatNote(cleanNote)}</div>
       </div>
     </Card>
   );

@@ -46,12 +46,21 @@ FIXES applied (cumulative):
            always produces a Healthy-dominant mean.
 
            Fix: dual-path aggregation.
-           - Diffuse diseases (Alzheimers, MDD): argmax(mean_probs) — correct
+           - Diffuse diseases (Alzheimers): argmax(mean_probs) — correct
              because pathology is present in every epoch.
-           - Episodic disease  (Epilepsy):       peak-epoch strategy — the
+           - Episodic diseases (Epilepsy, MDD): peak-epoch strategy — the
              session is positive if ANY epoch exceeds the per-class threshold,
-             because a seizure only has to happen once to be clinically real.
+             because a seizure / depressive episode only has to happen once
+             to be clinically real.
            The two strategies are unified in aggregate() via AGGREGATION_MODE.
+  Bug 8 — aggregate() tie-breaking was undefined when both a peak-mode and
+           a mean-mode disease cleared their thresholds simultaneously.
+           Fix: best_disease / best_conf tracking picks whichever disease
+           produced the single highest confidence value, regardless of mode.
+  Update — MDD reclassified as episodic: threshold lowered to 0.55 and
+           aggregation_mode changed from "mean" to "peak", matching the
+           clinical reality that depressive episodes are not present in
+           every EEG epoch.
 =============================================================================
 """
 
@@ -60,6 +69,7 @@ load_dotenv()
 
 import os
 import sys
+import re
 import argparse
 import json
 import numpy as np
@@ -101,22 +111,23 @@ CFG = {
     "lstm_hidden":   256,
     "lstm_layers":   2,
     "dropout":       0.4,
-    # FIX Bug 4: per-class thresholds (Epilepsy has sparse ictal activity)
+    # FIX Bug 4: per-class thresholds (Epilepsy / MDD have sparse ictal activity)
+    # UPDATE: MDD threshold lowered to 0.55 to match its new peak-epoch strategy.
     "high_risk_thresholds": {
         "Alzheimers": 0.70,
         "Epilepsy":   0.55,
-        "MDD":        0.65,
+        "MDD":        0.55,   # was 0.65 — lowered with peak-mode reclassification
     },
-    # FIX Bug 6: aggregation strategy per disease.
+    # FIX Bug 6 + UPDATE: aggregation strategy per disease.
     #   "mean"  — argmax of mean epoch probabilities. Correct for diffuse
-    #             pathology that is present in every epoch (Alzheimers, MDD).
+    #             pathology present in every epoch (Alzheimers).
     #   "peak"  — session is positive if ANY single epoch exceeds the
     #             high_risk_threshold. Correct for episodic/sparse pathology
-    #             (Epilepsy) where most epochs look inter-ictal / healthy.
+    #             (Epilepsy, MDD) where most epochs may look inter-ictal.
     "aggregation_mode": {
         "Alzheimers": "mean",
         "Epilepsy":   "peak",
-        "MDD":        "mean",
+        "MDD":        "peak",  # was "mean" — reclassified as episodic
     },
     "min_confidence":    0.50,
     "disease_alert_pct": 0.20,
@@ -410,23 +421,28 @@ def aggregate(epoch_results: list[dict]) -> dict:
     """
     Aggregate per-epoch results into a session-level summary.
 
-    FIX Bug 6 — dual-path aggregation:
+    FIX Bug 6 + UPDATE — dual-path aggregation with best-signal tie-breaking:
 
-    DIFFUSE diseases (Alzheimers, MDD) use mean_probs + argmax.
+    DIFFUSE diseases (Alzheimers) use mean_probs + threshold comparison.
       Pathology appears in every epoch, so averaging is meaningful.
 
-    EPISODIC disease (Epilepsy) uses peak-epoch detection.
-      A seizure may occupy <5% of the recording; averaging with 95%
-      inter-ictal (healthy-looking) epochs mathematically guarantees
-      a Healthy prediction even when the model fires correctly on every
-      ictal epoch.  Instead, the session is positive if ANY epoch's
-      P(Epilepsy) exceeds the per-class threshold — because a seizure
-      only needs to happen once to be clinically real.
+    EPISODIC diseases (Epilepsy, MDD) use peak-epoch detection.
+      A seizure or depressive episode may occupy <5% of the recording;
+      averaging with the remaining inter-ictal / baseline epochs mathematically
+      guarantees a Healthy prediction even when the model fires correctly on
+      every pathological epoch. Instead, the session is positive if ANY epoch's
+      probability exceeds the per-class threshold.
 
-    Final prediction priority (highest to lowest):
-      1. Any peak-mode disease that fired  → that disease
-      2. argmax(mean_probs) among mean-mode diseases
-      3. Healthy
+    Tie-breaking (Bug 8 fix): when multiple diseases clear their thresholds,
+      the one with the single highest absolute confidence value wins, regardless
+      of whether it was detected via peak- or mean-mode. This replaces the
+      old priority ordering (peak-mode always beat mean-mode) which could
+      suppress a high-confidence Alzheimers signal in the presence of a
+      barely-threshold Epilepsy spike.
+
+    Final prediction:
+      - best_disease (highest conf among all threshold-clearing diseases), or
+      - Healthy if nothing cleared its threshold.
     """
     all_probs   = np.array([list(r["probabilities"].values()) for r in epoch_results])
     mean_probs  = all_probs.mean(axis=0)   # shape [4]
@@ -440,12 +456,14 @@ def aggregate(epoch_results: list[dict]) -> dict:
     agg_mode   = CFG["aggregation_mode"]
 
     # ── Evaluate each disease independently ──────────────────────────────
-    disease_detected: str | None = None
-    detection_confidence: float  = 0.0
-    high_risk_flags: list[str]   = []
-    disease_alerts:  list[str]   = []
+    high_risk_flags: list[str] = []
+    disease_alerts:  list[str] = []
 
-    # Check peak-mode diseases first (higher clinical priority)
+    # Track the single strongest signal across all diseases and both modes.
+    best_disease: str | None = None
+    best_conf: float = 0.0
+
+    # 1. Check peak-mode diseases (Epilepsy, MDD)
     for name in DISEASE_NAMES:
         if agg_mode.get(name, "mean") != "peak":
             continue
@@ -456,51 +474,52 @@ def aggregate(epoch_results: list[dict]) -> dict:
 
         if p_peak >= threshold:
             high_risk_flags.append(name)
-            if disease_detected is None:
-                disease_detected      = name
-                detection_confidence  = p_peak   # report peak, not diluted mean
+            # Strongest absolute confidence wins the session prediction.
+            if p_peak > best_conf:
+                best_disease = name
+                best_conf    = p_peak
+
         if p_mean >= CFG["disease_alert_pct"]:
             disease_alerts.append(name)
 
-    # Check mean-mode diseases
-    mean_mode_probs = {
-        i: float(mean_probs[i])
-        for i, n in enumerate(CLASS_NAMES)
-        if n in DISEASE_NAMES and agg_mode.get(n, "mean") == "mean"
-    }
-    for idx, p_mean in mean_mode_probs.items():
-        name      = CLASS_NAMES[idx]
+    # 2. Check mean-mode diseases (Alzheimers)
+    for i, name in enumerate(CLASS_NAMES):
+        if name not in DISEASE_NAMES:
+            continue
+        if agg_mode.get(name, "mean") != "mean":
+            continue
         threshold = hr_thresh.get(name, 0.70)
+        p_mean    = float(mean_probs[i])
+
         if p_mean >= threshold:
             high_risk_flags.append(name)
-            if disease_detected is None:
-                disease_detected     = name
-                detection_confidence = p_mean
+            # Mean-mode confidence competes on equal footing with peak-mode.
+            if p_mean > best_conf:
+                best_disease = name
+                best_conf    = p_mean
+
         if p_mean >= CFG["disease_alert_pct"]:
             if name not in disease_alerts:
                 disease_alerts.append(name)
 
     # ── Final session prediction ─────────────────────────────────────────
-    if disease_detected is not None:
-        session_pred = disease_detected
-        session_conf = round(detection_confidence, 4)
+    if best_disease is not None:
+        session_pred = best_disease
+        session_conf = round(best_conf, 4)
     else:
-        # FIX: No disease cleared its clinical threshold — patient is Healthy.
-        # Do NOT use argmax here, otherwise sub-threshold noise becomes a diagnosis.
+        # No disease cleared its clinical threshold — patient is Healthy.
+        # Report the model's mean confidence in the Healthy class (index 0).
         session_pred = "Healthy"
-        
-        # We report the model's confidence in the Healthy class (index 0)
-        session_conf = round(float(mean_probs[0]), 4) 
-
-    
+        session_conf = round(float(mean_probs[0]), 4)
 
     return {
         "session_prediction": session_pred,
         "session_confidence": session_conf,
-        "n_epochs_analyzed":  len(epoch_results),
-        "vote_distribution":  {n: int(v) for n, v in zip(CLASS_NAMES, vote_counts)},
+        # mean_probabilities is now a named dict for direct key lookup downstream.
         "mean_probabilities": {n: round(float(p), 4) for n, p in zip(CLASS_NAMES, mean_probs)},
         "peak_probabilities": {n: round(float(p), 4) for n, p in zip(CLASS_NAMES, peak_probs)},
+        "n_epochs_analyzed":  len(epoch_results),
+        "vote_distribution":  {n: int(v) for n, v in zip(CLASS_NAMES, vote_counts)},
         "high_risk_flags":    high_risk_flags,
         "disease_alerts":     disease_alerts,
         "timestamp":          datetime.now().isoformat(),
@@ -542,62 +561,52 @@ def generate_clinical_explanation(model: LuminaModel,
     total_signal       = torch.sum(channel_importance).item()
     top_ch_pct         = (channel_importance[top_ch_idx].item() / (total_signal + 1e-10)) * 100
 
-    # llm_prompt = (
-    #     f"You are the Chief Neurologist evaluating an AI EEG analysis. "
-    #     f"The Lumina neural network diagnosed the patient with {disease_name}. "
-    #     f"A mathematical heatmap reveals that {top_ch_pct:.1f}% of the pathological "
-    #     f"signal originated primarily in channel {top_ch_name}. "
-    #     f"Write a concise, 2-sentence clinical rationale explaining why {disease_name} "
-    #     f"would present with intense focal electrical activity in the {top_ch_name} region. "
-    #     f"Do not mention the AI or the heatmap; write as a doctor interpreting the findings."
-    # )
-
     llm_prompt = f"""You are a Board-Certified Neurologist preparing a formal Clinical Interpretation Report for an EEG analysis that detected {disease_name}.
  
-    **Clinical Context:**
-    - Diagnosis: {disease_name}
-    - Primary Signal Location: {top_ch_name} electrode (contributing {top_ch_pct:.1f}% of pathological activity)
-    - Analysis Method: Quantitative EEG with multi-domain neural network classification
-    
-    **Task:** Write a comprehensive clinical interpretation report using the following structure. Use markdown formatting for visual clarity.
-    
-    ---
-    
-    ## 📋 CLINICAL INTERPRETATION REPORT
-    
-    ### 🎯 Primary Findings
-    [Write 2-3 sentences describing the key electrophysiological findings. Explain what abnormal patterns were detected and their clinical significance.]
-    
-    ### 🧠 Neuroanatomical Correlation
-    [Explain in 2-3 sentences why {disease_name} characteristically presents with abnormal electrical activity in the {top_ch_name} region. Reference the underlying brain structures (e.g., cortical areas, networks) and their known involvement in this condition.]
-    
-    ### ⚡ Pathophysiological Mechanism
-    [In 2-3 sentences, describe the biological mechanism: What happens at the cellular/network level in {disease_name} that produces these specific EEG signatures? Mention relevant neurotransmitter systems, neural oscillations, or synaptic dysfunction as appropriate.]
-    
-    ### 🔍 Clinical Significance
-    [Provide 2-3 sentences on what these findings mean for the patient. Include:
-    - Diagnostic confidence and any differential considerations
-    - Typical disease progression or prognosis context
-    - Any monitoring or follow-up implications]
-    
-    ### 💊 Recommended Actions
-    [List 3-5 specific, actionable clinical recommendations using bullet points:]
-    - [Recommendation 1]
-    - [Recommendation 2]
-    - [Recommendation 3]
-    
-    ---
-    
-    **Guidelines:**
-    - Write as a neurologist interpreting clinical EEG findings, NOT as an AI system
-    - Do NOT mention "AI", "neural network", "algorithm", "model", or "heatmap"
-    - Use professional medical terminology, but keep explanations clear
-    - Use emojis sparingly (only in section headers) for visual organization
-    - Reference specific neuroanatomical structures and physiological mechanisms
-    - Maintain an authoritative yet compassionate clinical tone
-    - Total length: 250-350 words
-    """
+**Clinical Context:**
+- Diagnosis: {disease_name}
+- Primary Signal Location: {top_ch_name} electrode (contributing {top_ch_pct:.1f}% of pathological activity)
+- Analysis Method: Quantitative EEG with multi-domain neural network classification
 
+**Task:** Write a comprehensive clinical interpretation report using the structure below. Use clean standard Markdown only.
+
+---
+
+## Clinical Interpretation Report
+
+### Primary Findings
+[Write 2-3 sentences describing the key electrophysiological findings. Explain what abnormal patterns were detected and their clinical significance.]
+
+### Neuroanatomical Correlation
+[Explain in 2-3 sentences why {disease_name} characteristically presents with abnormal electrical activity in the {top_ch_name} region. Reference the underlying brain structures (e.g., cortical areas, networks) and their known involvement in this condition.]
+
+### Pathophysiological Mechanism
+[In 2-3 sentences, describe the biological mechanism: What happens at the cellular/network level in {disease_name} that produces these specific EEG signatures? Mention relevant neurotransmitter systems, neural oscillations, or synaptic dysfunction as appropriate.]
+
+### Clinical Significance
+[Provide 2-3 sentences on what these findings mean for the patient. Include:
+- Diagnostic confidence and any differential considerations
+- Typical disease progression or prognosis context
+- Any monitoring or follow-up implications]
+
+### Recommended Actions
+[List 3-5 specific, actionable clinical recommendations using bullet points:
+- Recommendation 1
+- Recommendation 2
+- Recommendation 3]
+
+---
+
+**Guidelines:**
+- Write as a neurologist interpreting clinical EEG findings, NOT as an AI system
+- Do NOT mention "AI", "neural network", "algorithm", "model", or "heatmap"
+- Use professional medical terminology, but keep explanations clear
+- Use ONLY clean standard Markdown: ## for headings, - for bullet lists, ** for emphasis
+- Do NOT use emojis, decorative ASCII symbols, prefix codes, or special Unicode characters
+- Reference specific neuroanatomical structures and physiological mechanisms
+- Maintain an authoritative yet compassionate clinical tone
+- Total length: 250-350 words
+"""
 
     print(f"  [EXPLAINER] Done. Primary signal: {top_ch_name} ({top_ch_pct:.1f}% gradient weight).")
 
@@ -607,6 +616,19 @@ def generate_clinical_explanation(model: LuminaModel,
         "llm_prompt":        llm_prompt,
         "heatmap_matrix":    heatmap_tensor.numpy().tolist(),
     }
+
+
+def _sanitize_clinical_text(text: str) -> str:
+    """Strip encoding artifacts, BOM, control characters from Gemini output."""
+    if not text:
+        return text
+    # Remove BOM, zero-width joiners, soft hyphens
+    text = text.replace('\ufeff', '').replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\u00ad', '')
+    # Strip non-printable control characters (keep newline \n, tab \t, carriage return \r)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    # Strip any leading non-alphanumeric, non-markdown garbage before first word or header
+    text = text.strip()
+    return text
 
 
 def call_gemini_api(prompt: str) -> str:
@@ -625,7 +647,8 @@ def call_gemini_api(prompt: str) -> str:
         genai.configure(api_key=api_key)
         model    = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
-        return response.text.strip()
+        raw = response.text.strip()
+        return _sanitize_clinical_text(raw)
     except Exception as e:
         return f"LLM API Error: {e}"
 
@@ -667,6 +690,7 @@ def _maybe_explain(model: LuminaModel, ready: np.ndarray,
 
 def print_result(summary: dict) -> None:
     ALERT       = CFG["disease_alert_pct"]
+    # mean_probabilities is now a named dict — access by class name directly.
     probs       = summary["mean_probabilities"]
     peak_probs  = summary.get("peak_probabilities", {})
     pred        = summary["session_prediction"]
@@ -696,6 +720,7 @@ def print_result(summary: dict) -> None:
     print(sep2)
     print(f"  {'Class':<14} {'Mean prob':>10}  {'Peak prob':>10}  {'Bar (mean)':>4}  {'Mode'}")
 
+    # Iterate by name since mean_probabilities is now a dict.
     for name, mean_p in probs.items():
         peak_p  = peak_probs.get(name, mean_p)
         mode    = agg_mode.get(name, "mean") if name != "Healthy" else "—"
@@ -733,6 +758,7 @@ def print_result(summary: dict) -> None:
             print(f"  ┌{'─'*58}┐")
             print(f"  │  {'⚠  SECONDARY DISEASE SIGNAL(S) DETECTED':<{w}}│")
             for a in alerts:
+                # probs is now a dict — look up by name directly.
                 print(f"  │    {'• ' + a + ':  ' + f'{probs[a]*100:.1f}%':<54}│")
             print(f"  │  {'Recommend further clinical evaluation.':<{w}}│")
             print(f"  └{'─'*58}┘")
@@ -751,7 +777,7 @@ def infer_npy(filepath: str, is_raw: bool, orig_fs: float) -> tuple[dict, list]:
 
     FIX Bug 3: z-score is now applied to the CONTINUOUS signal before epoching,
     not to the stacked epoch array. This prevents ictal amplitude dilution.
-    
+
     ADDED: Waveform viewer support — captures filtered signal before z-scoring
     and attaches it to the summary for visualization in Flutter/frontend.
     """
@@ -795,16 +821,16 @@ def infer_npy(filepath: str, is_raw: bool, orig_fs: float) -> tuple[dict, list]:
     model   = load_model()
     results = run_inference(model, ready)
     summary = aggregate(results)
-    
+
     # Add waveform data for viewer
     preview_len = min(2560, raw_for_viewer.shape[-1])
     summary["waveforms"] = {
-        "signal": raw_for_viewer[:CFG["n_channels"], :preview_len].tolist(),
-        "channels": CFG["channel_order"],
-        "sample_rate": CFG["sample_rate"],
+        "signal":          raw_for_viewer[:CFG["n_channels"], :preview_len].tolist(),
+        "channels":        CFG["channel_order"],
+        "sample_rate":     CFG["sample_rate"],
         "n_samples_total": raw_for_viewer.shape[-1],
     }
-    
+
     summary = _maybe_explain(model, ready, results, summary)
 
     print_result(summary)
@@ -815,9 +841,9 @@ def infer_edf(filepath: str) -> tuple[dict, list]:
     """
     Infer from a European Data Format (.edf) recording.
     Z-score is applied to the continuous aligned signal before epoching.
-    
-    ADDED: Waveform viewer support — captures filtered/aligned signal before 
-    z-scoring and attaches it to the summary for visualization.
+
+    ADDED: Waveform viewer support — captures filtered/aligned signal before
+    z-scoring and attaches it to the summary for visualization in Flutter/frontend.
     """
     try:
         import mne
@@ -870,7 +896,7 @@ def infer_edf(filepath: str) -> tuple[dict, list]:
 
     # Capture signal before z-scoring for viewer
     raw_signal_for_viewer = aligned.copy()
-    
+
     print("  Applying patient-specific global Z-scoring (continuous signal)...")
     aligned = zscore_global(aligned)
 
@@ -885,17 +911,17 @@ def infer_edf(filepath: str) -> tuple[dict, list]:
     model   = load_model()
     results = run_inference(model, ready)
     summary = aggregate(results)
-    
+
     # Add waveform data for viewer
-    preview_len = min(2560, raw_signal_for_viewer.shape[1])
-    n_ch_actual = min(CFG["n_channels"], raw_signal_for_viewer.shape[0])
+    preview_len  = min(2560, raw_signal_for_viewer.shape[1])
+    n_ch_actual  = min(CFG["n_channels"], raw_signal_for_viewer.shape[0])
     summary["waveforms"] = {
-        "signal": raw_signal_for_viewer[:n_ch_actual, :preview_len].tolist(),
-        "channels": CFG["channel_order"][:n_ch_actual],
-        "sample_rate": CFG["sample_rate"],
+        "signal":          raw_signal_for_viewer[:n_ch_actual, :preview_len].tolist(),
+        "channels":        CFG["channel_order"][:n_ch_actual],
+        "sample_rate":     CFG["sample_rate"],
         "n_samples_total": raw_signal_for_viewer.shape[1],
     }
-    
+
     summary = _maybe_explain(model, ready, results, summary)
 
     print_result(summary)

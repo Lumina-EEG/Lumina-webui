@@ -1,7 +1,12 @@
 import { motion } from "framer-motion";
 import {
-  ArrowRight, Brain, BarChart3, Shield,
-  Activity, Zap, Radio,
+  ArrowRight,
+  Brain,
+  BarChart3,
+  Shield,
+  Activity,
+  Zap,
+  Radio,
 } from "lucide-react";
 
 const fadeUp = {
@@ -43,9 +48,14 @@ export default function WelcomePage({ onNavigate }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img
-            src="/lumina-logo.jpeg"
+            src="/lumina-logo-only.png"
             alt="Lumina"
-            style={{ height: 30, width: 30, borderRadius: 6, objectFit: "cover" }}
+            style={{
+              height: 30,
+              width: 30,
+              borderRadius: 6,
+              objectFit: "cover",
+            }}
           />
           <span
             style={{
@@ -103,7 +113,8 @@ export default function WelcomePage({ onNavigate }) {
             width: 600,
             height: 600,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(59,164,255,0.06) 0%, transparent 70%)",
+            background:
+              "radial-gradient(circle, rgba(59,164,255,0.06) 0%, transparent 70%)",
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
@@ -126,7 +137,8 @@ export default function WelcomePage({ onNavigate }) {
               width: 56,
               height: 56,
               borderRadius: 14,
-              background: "linear-gradient(135deg, var(--accent-dim), rgba(59,164,255,0.05))",
+              background:
+                "linear-gradient(135deg, var(--accent-dim), rgba(59,164,255,0.05))",
               border: "1px solid rgba(59,164,255,0.15)",
               display: "flex",
               alignItems: "center",
@@ -163,7 +175,13 @@ export default function WelcomePage({ onNavigate }) {
         >
           Intelligent EEG Analysis
           <br />
-          <span style={{ background: "linear-gradient(135deg, var(--accent), #60A5FA)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          <span
+            style={{
+              background: "linear-gradient(135deg, var(--accent), #60A5FA)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
             for Modern Neurology
           </span>
         </motion.h1>
@@ -187,7 +205,12 @@ export default function WelcomePage({ onNavigate }) {
         <motion.div
           variants={fadeUp}
           transition={{ duration: 0.5, delay: 0.3 }}
-          style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            justifyContent: "center",
+          }}
         >
           <motion.button
             whileHover={{ scale: 1.04 }}
@@ -249,7 +272,11 @@ export default function WelcomePage({ onNavigate }) {
           width: "100%",
         }}
       >
-        <motion.div variants={fadeUp} transition={{ duration: 0.5 }} style={{ textAlign: "center", marginBottom: 48 }}>
+        <motion.div
+          variants={fadeUp}
+          transition={{ duration: 0.5 }}
+          style={{ textAlign: "center", marginBottom: 48 }}
+        >
           <h2
             style={{
               fontSize: 28,
@@ -261,7 +288,14 @@ export default function WelcomePage({ onNavigate }) {
           >
             Purpose-built for EEG Analysis
           </h2>
-          <p style={{ fontSize: 15, color: "var(--text-secondary)", maxWidth: 500, margin: "0 auto" }}>
+          <p
+            style={{
+              fontSize: 15,
+              color: "var(--text-secondary)",
+              maxWidth: 500,
+              margin: "0 auto",
+            }}
+          >
             From raw waveforms to clinical insights — Lumina streamlines the
             entire EEG diagnostic workflow.
           </p>
@@ -344,7 +378,13 @@ export default function WelcomePage({ onNavigate }) {
                 >
                   {feature.title}
                 </h3>
-                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                <p
+                  style={{
+                    fontSize: 13.5,
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.7,
+                  }}
+                >
                   {feature.desc}
                 </p>
               </motion.div>
@@ -371,7 +411,8 @@ export default function WelcomePage({ onNavigate }) {
           transition={{ duration: 0.5 }}
           style={{
             borderRadius: "var(--radius-xl)",
-            background: "linear-gradient(135deg, rgba(59,164,255,0.08), rgba(37,99,235,0.04))",
+            background:
+              "linear-gradient(135deg, rgba(59,164,255,0.08), rgba(37,99,235,0.04))",
             border: "1px solid rgba(59,164,255,0.12)",
             padding: "48px 32px",
             textAlign: "center",
@@ -451,9 +492,9 @@ export default function WelcomePage({ onNavigate }) {
               zIndex: 1,
             }}
           >
-            Lumina is being built for real-time EEG streaming and direct hospital
-            system integration. Connect EEG devices for live monitoring and
-            instant AI analysis at the point of care.
+            Lumina is being built for real-time EEG streaming and direct
+            hospital system integration. Connect EEG devices for live monitoring
+            and instant AI analysis at the point of care.
           </p>
 
           <div
@@ -467,24 +508,26 @@ export default function WelcomePage({ onNavigate }) {
               zIndex: 1,
             }}
           >
-            {["Real-time Streaming", "Hospital EMR Ready", "Live Monitoring"].map(
-              (tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 20,
-                    background: "var(--bg-surface-secondary)",
-                    border: "1px solid var(--border)",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    color: "var(--accent)",
-                  }}
-                >
-                  {tag}
-                </span>
-              )
-            )}
+            {[
+              "Real-time Streaming",
+              "Hospital EMR Ready",
+              "Live Monitoring",
+            ].map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  background: "var(--bg-surface-secondary)",
+                  border: "1px solid var(--border)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "var(--accent)",
+                }}
+              >
+                {tag}
+              </span>
+            ))}
           </div>
 
           <motion.button
@@ -544,8 +587,8 @@ export default function WelcomePage({ onNavigate }) {
             lineHeight: 1.7,
           }}
         >
-          Upload your first EEG recording and experience AI-powered
-          neurological diagnostics.
+          Upload your first EEG recording and experience AI-powered neurological
+          diagnostics.
         </motion.p>
         <motion.button
           variants={fadeUp}

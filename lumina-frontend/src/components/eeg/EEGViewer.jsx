@@ -1,9 +1,9 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from "react";
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import Card from "../ui/Card";
 import { buildEegTraces, buildEegLayout } from "../../utils/eeg";
 
-export default function EEGViewer({ signal, channels, sampleRate }) {
+const EEGViewer = forwardRef(function EEGViewer({ signal, channels, sampleRate }, ref) {
   const plotRef = useRef(null);
   const containerRef = useRef(null);
   const [gain, setGain] = useState(1.5);
@@ -40,6 +40,21 @@ export default function EEGViewer({ signal, channels, sampleRate }) {
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    captureImage: async (opts = {}) => {
+      const el = plotRef.current;
+      if (!el || !window.Plotly) return null;
+      const { width = 800, height = 350, scale = 2 } = opts;
+      const dataUrl = await window.Plotly.toImage(el, {
+        format: 'png',
+        width,
+        height,
+        scale,
+      });
+      return dataUrl;
+    },
+  }), []);
 
   useEffect(() => {
     const el = plotRef.current;
@@ -191,4 +206,6 @@ export default function EEGViewer({ signal, channels, sampleRate }) {
       </div>
     </div>
   );
-}
+});
+
+export default EEGViewer;
